@@ -15,15 +15,23 @@ const DEFAULT_CONFIG: TranscriptionConfig = {
   fallbackMessage: '[Voice Message - transcription unavailable]',
 };
 
-async function transcribeWithOpenAI(
+async function transcribeAudio(
   audioBuffer: Buffer,
   config: TranscriptionConfig,
 ): Promise<string | null> {
-  const env = readEnvFile(['OPENAI_API_KEY']);
-  const apiKey = env.OPENAI_API_KEY;
+  const env = readEnvFile(['OPENAI_API_KEY', 'GROQ_API_KEY']);
+  const groqKey = env.GROQ_API_KEY;
+  const openaiKey = env.OPENAI_API_KEY;
+
+  // Prefer Groq (faster, cheaper), fall back to OpenAI
+  const apiKey = groqKey || openaiKey;
+  const baseURL = groqKey
+    ? 'https://api.groq.com/openai/v1'
+    : undefined;
+  const model = groqKey ? 'whisper-large-v3-turbo' : config.model;
 
   if (!apiKey) {
-    console.warn('OPENAI_API_KEY not set in .env');
+    console.warn('Neither GROQ_API_KEY nor OPENAI_API_KEY set in .env');
     return null;
   }
 
@@ -32,22 +40,22 @@ async function transcribeWithOpenAI(
     const OpenAI = openaiModule.default;
     const toFile = openaiModule.toFile;
 
-    const openai = new OpenAI({ apiKey });
+    const client = new OpenAI({ apiKey, baseURL });
 
     const file = await toFile(audioBuffer, 'voice.ogg', {
       type: 'audio/ogg',
     });
 
-    const transcription = await openai.audio.transcriptions.create({
+    const transcription = await client.audio.transcriptions.create({
       file: file,
-      model: config.model,
+      model,
       response_format: 'text',
     });
 
     // When response_format is 'text', the API returns a plain string
     return transcription as unknown as string;
   } catch (err) {
-    console.error('OpenAI transcription failed:', err);
+    console.error('Transcription failed:', err);
     return null;
   }
 }
@@ -80,7 +88,7 @@ export async function transcribeAudioMessage(
 
     console.log(`Downloaded audio message: ${buffer.length} bytes`);
 
-    const transcript = await transcribeWithOpenAI(buffer, config);
+    const transcript = await transcribeAudio(buffer, config);
 
     if (!transcript) {
       return config.fallbackMessage;

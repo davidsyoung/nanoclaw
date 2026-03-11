@@ -193,10 +193,10 @@ export class WhatsAppChannel implements Channel {
         const groups = this.opts.registeredGroups();
         if (groups[chatJid]) {
           let content =
-            normalized.conversation ||
-            normalized.extendedTextMessage?.text ||
-            normalized.imageMessage?.caption ||
-            normalized.videoMessage?.caption ||
+            msg.message?.conversation ||
+            msg.message?.extendedTextMessage?.text ||
+            msg.message?.imageMessage?.caption ||
+            msg.message?.videoMessage?.caption ||
             '';
 
           // Image attachment handling
@@ -204,7 +204,7 @@ export class WhatsAppChannel implements Channel {
             try {
               const buffer = await downloadMediaMessage(msg, 'buffer', {});
               const groupDir = path.join(GROUPS_DIR, groups[chatJid].folder);
-              const caption = normalized?.imageMessage?.caption ?? '';
+              const caption = msg.message?.imageMessage?.caption ?? '';
               const result = await processImage(
                 buffer as Buffer,
                 groupDir,
@@ -218,6 +218,35 @@ export class WhatsAppChannel implements Channel {
             }
           }
 
+          // PDF attachment handling
+          if (msg.message?.documentMessage?.mimetype === 'application/pdf') {
+            try {
+              const buffer = await downloadMediaMessage(msg, 'buffer', {});
+              const groupDir = path.join(GROUPS_DIR, groups[chatJid].folder);
+              const attachDir = path.join(groupDir, 'attachments');
+              fs.mkdirSync(attachDir, { recursive: true });
+              const filename = path.basename(
+                msg.message?.documentMessage.fileName ||
+                `doc-${Date.now()}.pdf`,
+              );
+              const filePath = path.join(attachDir, filename);
+              fs.writeFileSync(filePath, buffer as Buffer);
+              const sizeKB = Math.round((buffer as Buffer).length / 1024);
+              const pdfRef = `[PDF: attachments/${filename} (${sizeKB}KB)]\nUse: pdf-reader extract attachments/${filename}`;
+              const caption = msg.message?.documentMessage.caption || '';
+              content = caption ? `${caption}\n\n${pdfRef}` : pdfRef;
+              logger.info(
+                { jid: chatJid, filename },
+                'Downloaded PDF attachment',
+              );
+            } catch (err) {
+              logger.warn(
+                { err, jid: chatJid },
+                'Failed to download PDF attachment',
+              );
+            }
+          }
+
           // Skip protocol messages with no text content (encryption keys, read receipts, etc.)
           // but allow voice messages through for transcription
           if (!content && !isVoiceMessage(msg)) continue;
@@ -226,10 +255,6 @@ export class WhatsAppChannel implements Channel {
           const senderName = msg.pushName || sender.split('@')[0];
 
           const fromMe = msg.key.fromMe || false;
-          // Detect bot messages: with own number, fromMe is reliable
-          // since only the bot sends from that number.
-          // With shared number, bot messages carry the assistant name prefix
-          // (even in DMs/self-chat) so we check for that.
           const isBotMessage = ASSISTANT_HAS_OWN_NUMBER
             ? fromMe
             : content.startsWith(`${ASSISTANT_NAME}:`);
