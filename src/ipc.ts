@@ -9,6 +9,7 @@ import { createTask, deleteTask, getTaskById, updateTask } from './db.js';
 import { isValidGroupFolder } from './group-folder.js';
 import { logger } from './logger.js';
 import { RegisteredGroup } from './types.js';
+import { applySelfUpdate, SelfUpdateResult } from './self-update.js';
 
 export interface IpcDeps {
   sendMessage: (jid: string, text: string) => Promise<void>;
@@ -171,6 +172,8 @@ export async function processTaskIpc(
     trigger?: string;
     requiresTrigger?: boolean;
     containerConfig?: RegisteredGroup['containerConfig'];
+    // For apply_patch (self-update)
+    branch?: string;
   },
   sourceGroup: string, // Verified identity from IPC directory
   isMain: boolean, // Verified from directory path
@@ -448,6 +451,55 @@ export async function processTaskIpc(
         );
       }
       break;
+
+    case 'apply_patch': {
+      // Only main group can trigger self-updates
+      if (!isMain) {
+        logger.warn(
+          { sourceGroup },
+          'Unauthorized apply_patch attempt blocked',
+        );
+        break;
+      }
+      if (!data.branch) {
+        logger.warn({ sourceGroup }, 'apply_patch missing branch');
+        break;
+      }
+
+      logger.info(
+        { branch: data.branch, sourceGroup },
+        'Self-update requested via IPC',
+      );
+
+      // Find the chat JID for the main group so we can report status
+      const mainJid = Object.entries(registeredGroups).find(
+        ([, g]) => g.folder === sourceGroup,
+      )?.[0];
+
+      let result: SelfUpdateResult;
+      try {
+        result = await applySelfUpdate(data.branch, sourceGroup);
+      } catch (err) {
+        result = {
+          success: false,
+          message: `Self-update threw: ${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+
+      // Report result back to the user
+      if (mainJid) {
+        const emoji = result.success ? '✅' : '❌';
+        try {
+          await deps.sendMessage(
+            mainJid,
+            `${emoji} Self-update: ${result.message}`,
+          );
+        } catch (sendErr) {
+          logger.error({ sendErr }, 'Failed to send self-update status');
+        }
+      }
+      break;
+    }
 
     default:
       logger.warn({ type: data.type }, 'Unknown IPC task type');

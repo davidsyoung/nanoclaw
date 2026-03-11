@@ -333,6 +333,46 @@ Use available_groups.json to find the JID for a group. The folder name must be c
   },
 );
 
+server.tool(
+  'request_self_update',
+  `Request the host to apply your code changes from the worktree. Main group only.
+
+WORKFLOW:
+1. Make your changes in /workspace/nanoclaw (the git worktree)
+2. Commit them to a new branch (e.g., "agent/fix-typo")
+3. Call this tool with the branch name
+4. The host will merge (fast-forward only), rebuild, and restart
+
+The merge MUST be a fast-forward. If it fails, you'll get an error message.
+After a successful update, the service restarts — your current session will end.`,
+  {
+    branch: z.string().describe('The git branch name in the worktree with your commits (e.g., "agent/fix-typo")'),
+    description: z.string().describe('Brief description of what changed, for the user'),
+  },
+  async (args) => {
+    if (!isMain) {
+      return {
+        content: [{ type: 'text' as const, text: 'Only the main group can request self-updates.' }],
+        isError: true,
+      };
+    }
+
+    const data = {
+      type: 'apply_patch',
+      branch: args.branch,
+      description: args.description,
+      groupFolder,
+      timestamp: new Date().toISOString(),
+    };
+
+    writeIpcFile(TASKS_DIR, data);
+
+    return {
+      content: [{ type: 'text' as const, text: `Self-update requested for branch "${args.branch}". The host will merge, build, and restart. Your session will end shortly.` }],
+    };
+  },
+);
+
 // Start the stdio transport
 const transport = new StdioServerTransport();
 await server.connect(transport);

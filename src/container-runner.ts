@@ -86,6 +86,20 @@ function buildVolumeMounts(
       containerPath: '/workspace/group',
       readonly: false,
     });
+
+    // Self-improvement: mount the agent worktree so the agent can edit code
+    const worktreePath = path.join(
+      process.env.HOME || '/tmp',
+      'Dev',
+      'nanoclaw-agent-work',
+    );
+    if (fs.existsSync(worktreePath)) {
+      mounts.push({
+        hostPath: worktreePath,
+        containerPath: '/workspace/nanoclaw',
+        readonly: false,
+      });
+    }
   } else {
     // Other groups only get their own folder
     mounts.push({
