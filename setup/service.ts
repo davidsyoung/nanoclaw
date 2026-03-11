@@ -101,7 +101,7 @@ function setupLaunchd(
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/usr/local/bin:/usr/bin:/bin:${homeDir}/.local/bin</string>
+        <string>${path.dirname(nodePath)}:/usr/local/bin:/usr/bin:/bin:${homeDir}/.local/bin</string>
         <key>HOME</key>
         <string>${homeDir}</string>
     </dict>
