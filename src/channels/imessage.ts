@@ -117,7 +117,11 @@ export class IMessageChannel implements Channel {
            FROM chat c WHERE c.chat_identifier = ?`,
         )
         .get(chatId) as
-        | { display_name: string | null; style: number; last_date: number | null }
+        | {
+            display_name: string | null;
+            style: number;
+            last_date: number | null;
+          }
         | undefined;
 
       if (row) {
@@ -192,9 +196,7 @@ export class IMessageChannel implements Channel {
         if (!text) continue;
 
         const senderId = row.is_from_me ? 'me' : row.sender_id || 'unknown';
-        const senderName = row.is_from_me
-          ? 'Me'
-          : friendlyName(row.sender_id);
+        const senderName = row.is_from_me ? 'Me' : friendlyName(row.sender_id);
 
         this.opts.onMessage(jid, {
           id: row.guid,
@@ -240,7 +242,11 @@ export class IMessageChannel implements Channel {
       if (!fs.existsSync(filePath)) continue;
 
       if (att.mime_type.startsWith('image/')) {
-        const result = this.processImageAttachment(filePath, att.mime_type, jid);
+        const result = this.processImageAttachment(
+          filePath,
+          att.mime_type,
+          jid,
+        );
         if (result) parts.push(result);
       } else if (att.mime_type.startsWith('audio/')) {
         const result = await this.processAudioAttachment(filePath);
@@ -288,7 +294,9 @@ export class IMessageChannel implements Channel {
   /**
    * Convert audio to ogg, transcribe via Groq/OpenAI Whisper.
    */
-  private async processAudioAttachment(filePath: string): Promise<string | null> {
+  private async processAudioAttachment(
+    filePath: string,
+  ): Promise<string | null> {
     try {
       let audioBuffer: Buffer;
 
@@ -323,7 +331,10 @@ export class IMessageChannel implements Channel {
       });
 
       if (transcript) {
-        logger.info({ length: transcript.length }, 'iMessage voice transcribed');
+        logger.info(
+          { length: transcript.length },
+          'iMessage voice transcribed',
+        );
         return `[Voice: ${transcript.trim()}]`;
       }
 
@@ -390,13 +401,42 @@ end tell`;
 
 function extractTextFromAttributedBody(blob: Buffer): string | null {
   try {
-    const str = blob.toString('utf-8');
-    const marker = 'NSString';
-    const idx = str.indexOf(marker);
+    // NSAttributedString binary format: after "NSString" marker and some type info,
+    // there's a length byte (or multi-byte length) followed by the UTF-8 text.
+    // The pattern is: ...NSString\x01\x94\x84\x01\x2B{length}{text}...
+    const nsStringMarker = Buffer.from('NSString');
+    const idx = blob.indexOf(nsStringMarker);
     if (idx === -1) return null;
-    const afterMarker = str.slice(idx + marker.length);
-    const match = afterMarker.match(/[\x20-\x7E\u00A0-\uFFFF]+/);
-    return match ? match[0] : null;
+
+    // Scan forward from marker to find the \x2B byte ('+' = NSString content marker)
+    const searchStart = idx + nsStringMarker.length;
+    let pos = searchStart;
+    while (pos < blob.length && pos < searchStart + 20) {
+      if (blob[pos] === 0x2b) {
+        pos++; // skip the 0x2B marker
+        // Next byte(s) encode the length
+        let textLen = blob[pos];
+        pos++;
+        if (textLen === 0x81) {
+          // Two-byte length: 0x81 followed by actual length byte
+          textLen = blob[pos];
+          pos++;
+        } else if (textLen === 0x82) {
+          // Three-byte length: 0x82 followed by 2 big-endian length bytes
+          textLen = (blob[pos] << 8) | blob[pos + 1];
+          pos += 2;
+        }
+        if (textLen > 0 && pos + textLen <= blob.length) {
+          const text = blob.subarray(pos, pos + textLen).toString('utf-8');
+          // Filter out replacement characters from bad decoding
+          const clean = text.replace(/\uFFFC/g, '').trim();
+          return clean || null;
+        }
+        break;
+      }
+      pos++;
+    }
+    return null;
   } catch {
     return null;
   }
