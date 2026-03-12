@@ -3,7 +3,7 @@ import { WAMessage, WASocket } from '@whiskeysockets/baileys';
 
 import { readEnvFile } from './env.js';
 
-interface TranscriptionConfig {
+export interface TranscriptionConfig {
   model: string;
   enabled: boolean;
   fallbackMessage: string;
@@ -15,7 +15,7 @@ const DEFAULT_CONFIG: TranscriptionConfig = {
   fallbackMessage: '[Voice Message - transcription unavailable]',
 };
 
-async function transcribeAudio(
+export async function transcribeAudio(
   audioBuffer: Buffer,
   config: TranscriptionConfig,
 ): Promise<string | null> {
@@ -25,9 +25,7 @@ async function transcribeAudio(
 
   // Prefer Groq (faster, cheaper), fall back to OpenAI
   const apiKey = groqKey || openaiKey;
-  const baseURL = groqKey
-    ? 'https://api.groq.com/openai/v1'
-    : undefined;
+  const baseURL = groqKey ? 'https://api.groq.com/openai/v1' : undefined;
   const model = groqKey ? 'whisper-large-v3-turbo' : config.model;
 
   if (!apiKey) {
