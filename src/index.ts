@@ -325,7 +325,7 @@ async function runAgent(
         groupFolder: group.folder,
         chatJid,
         isMain,
-        assistantName: ASSISTANT_NAME,
+        assistantName: group.assistantName || ASSISTANT_NAME,
         ...(imageAttachments.length > 0 && { imageAttachments }),
       },
       (proc, containerName) =>

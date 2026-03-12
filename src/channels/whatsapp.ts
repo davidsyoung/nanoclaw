@@ -227,7 +227,7 @@ export class WhatsAppChannel implements Channel {
               fs.mkdirSync(attachDir, { recursive: true });
               const filename = path.basename(
                 msg.message?.documentMessage.fileName ||
-                `doc-${Date.now()}.pdf`,
+                  `doc-${Date.now()}.pdf`,
               );
               const filePath = path.join(attachDir, filename);
               fs.writeFileSync(filePath, buffer as Buffer);
@@ -299,9 +299,13 @@ export class WhatsAppChannel implements Channel {
     // On a shared number, prefix is also needed in DMs (including self-chat)
     // to distinguish bot output from user messages.
     // Skip only when the assistant has its own dedicated phone number.
+    // Use per-group assistant name if configured, otherwise global default
+    const groups = this.opts.registeredGroups();
+    const group = groups[jid];
+    const displayName = group?.assistantName || ASSISTANT_NAME;
     const prefixed = ASSISTANT_HAS_OWN_NUMBER
       ? text
-      : `${ASSISTANT_NAME}: ${text}`;
+      : `${displayName}: ${text}`;
 
     if (!this.connected) {
       this.outgoingQueue.push({ jid, text: prefixed });
