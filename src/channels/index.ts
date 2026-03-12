@@ -5,6 +5,9 @@
 
 // gmail
 
+// imessage
+import './imessage.js';
+
 // slack
 
 // telegram
